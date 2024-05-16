@@ -14,44 +14,63 @@ library(rpart)
 library(RCurl)
 library(ggplot2)
 library(skimr)
-library(caret)
 
 # importing data set
 load("./MI.RData")
-
 ```
 
 ### Question 1
 
 Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.
 
+n > p
+5 misssing data 
+dimensionality of the data
+corinality <- variables that are correlated need to be removed
 
-```{r data_exploration, echo=FALSE}
-# head(MI)
-# summary(MI)
-# pairs()
 
-
-# GAM (general additive models)? 
-#gam()
-# predict(gam1, se=TRUE, col= "purple")
+```{r data_exploration, include=FALSE}
+head(MI)
+summary(MI)
+dim(MI)
 
 # checking for missing values
+sum(is.na(MI))
+
+na_counts <- sapply(MI, function(x) sum(is.na(x)))
+print(na_counts)
+
+sum(is.na(MI$nr03))
+sum(is.na(MI$zab_leg_02))
+sum(is.na(MI$FIB_G_POST))
+sum(is.na(MI$post_im))
+sum(is.na(MI$fibr_ter_02))
+
+```
+
+```{r missing_data, include=FALSE}
+# *** Predictive Imputation ***
+library(mice)
+
+# Subset the data to only include rows with NA
+rows_with_na <- apply(MI, 1, function(x) any(is.na(x)))
+MI_missing <- MI[rows_with_na, ]
+
+MI_imputed <- mice(MI, m=1, maxit=50, method="pmm", seed=500)
+MI <- complete(MI_imputed)
+
+# OR Removing missing values
+#MI = na.omit(MI)
 #sum(is.na(MI))
-
 ```
 
-```{r missing_data, echo=FALSE}
-
-# Predictive Imputation
-
-# Removing missing values
-MI = MI[complete.cases(MI),]
-
+```{r correlation, include=FALSE}
 ```
-
 
 ```{r split_data, echo=FALSE}
+library(caret)
+
+set.seed(33)
 # Splitting data into training and testing sets
 trainIndex <- createDataPartition(MI$LET_IS, p = .8, 
                                   list = FALSE, 
@@ -64,48 +83,162 @@ MI_test  <- MI[-trainIndex,]
 
 Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to compare your models to?
 
-```{r linear_models, echo=FALSE}
-
+```{r unconstrained_linear_model, echo=FALSE}
 library(glmnet)
 library(dplyr)
 library(leaps)
 
-X <- select(MI_train, -LET_IS)
-y <- as.numeric(MI_train$LET_IS)
+unconstrained_model <- glm(LET_IS ~ ., data = MI_train, family = binomial)
+#summary(unconstrained_model)
 
-# Linear model
-regfit.fwd <- regsubsets(LET_IS ~ ., data = MI, nvmax = 19, method = "forward")
-#summary(regfit.fwd)
+# Predictions
+unconstrained_pred <- predict(unconstrained_model, newdata = MI_test, type = "response")
+unconstrained_pred_class <- ifelse(unconstrained_pred > 0.5, TRUE, FALSE)
 
-regfit.bwd <- regsubsets(LET_IS ~ ., data = MI_train, nvmax = 19, method = "backward") 
-#summary(regfit.bwd)
+# Confusion matrix
+unconstrained_model.table <- table(MI_test$LET_IS, unconstrained_pred_class)
+unconstrained_model.table
+```
 
-# Ridge regression model
-ridge_model <- glmnet(X, y, alpha=0)
-plot(ridge_model, xvar="lambda")
+```{r lasso_model, echo=FALSE}
+# Lasso Model with Cross-Validation of 5 folds on the Training data
+lasso_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 1, family = "binomial", nfolds = 5)
 
-# Lasso regression model
-lasso_model <- glmnet(X, y, alpha=1)
-plot(lasso_model, xvar="lambda")
+# Best lambda
+plot(lasso_model)
 
+# Best lambda values
+lasso_model$lambda.min
+lasso_model$lambda.1se
 
-# Evaluate best model
-test_matrix <- model.matrix(LET_IS ~ ., data = MI_test)
+# Coefficients of variables at lambda min and lambda 1se
+coef(lasso_model, s = "lambda.min")
+coef(lasso_model, s = "lambda.1se")
 
-#for (i in 1:19) {
-#  coefi <- coef(regfit.best, id = i)
-#  pred <- test.mat[, names(coefi)] %*% coefi 
-#  val.errors[i] <- mean((Hitters$Salary[test] - pred)^2)
-#}
+# Predictions
+lasso_pred.min <- predict(lasso_model, s= lasso_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+lasso_pred.1se <- predict(lasso_model, s= lasso_model$lambda.1se, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+
+# Confusion matrix
+lasso_model.table <- table(MI_test$LET_IS, lasso_pred.min)
+#table(MI_test$LET_IS, lasso_pred.min)
 
 ```
+
+```{r ridge_model, echo=FALSE}
+# Ridge Model with Cross-Validation of 5 folds on the Training data
+ridge_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 0, family = "binomial", nfolds = 5)
+
+# Best lambda
+plot(ridge_model)
+
+# Best lambda values
+ridge_model$lambda.min
+ridge_model$lambda.1se
+
+# Coefficients of variables at lambda min and lambda 1se
+coef(lasso_model, s = "lambda.min")
+coef(lasso_model, s = "lambda.1se")
+
+# Predictions
+ridge_pred.min <- predict(ridge_model, s= ridge_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+ridge_pred.1se <- predict(ridge_model, s= ridge_model$lambda.1se, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
+
+# Confusion matrix
+ridge_model.table <- table(MI_test$LET_IS, ridge_pred.min)
+#table(MI_test$LET_IS, ridge_pred.1se)
+
+```
+
+```{r base_level_performance, echo=FALSE}
+library(caret)
+library(e1071)
+confusionMatrix(unconstrained_model.table)
+confusionMatrix(lasso_model.table)
+confusionMatrix(ridge_model.table)
+
+```
+
 
 ### Question 3
 
 Among your top predictors, do you see evidence of non-linear effects? How could you accommodate non-linear effects and still use a regularized regression approach? Does adding non-linear effects improve your model?
 
-```{r non_linear, echo=FALSE}
+```{r shrinkage, echo=FALSE}
 
+# *** Shrinkage Linear model ***
+regfit.fwd <- regsubsets(LET_IS ~ ., data = MI, nvmax = 35, method = "forward")
+regfit.fwd.summary <- summary(regfit.fwd)
+
+regfit.bwd <- regsubsets(LET_IS ~ ., data = MI_train, nvmax = 35, method = "backward") 
+regfit.bwd.summary <-summary(regfit.bwd)
+
+# Bic (forward selection)
+which.min(regfit.fwd.summary$bic)
+plot(regfit.fwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+points(20, regfit.fwd.summary$bic[20], col = "red", cex = 2, pch = 20)
+
+# Bic (backward selection)
+which.min(regfit.bwd.summary$bic)
+plot(regfit.bwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+points(19, regfit.bwd.summary$bic[19], col = "red", cex = 2, pch = 20)
+
+# Best predictors variables
+best_predictors.fwd <- names(which(regfit.fwd.summary$which[20, ] == TRUE))
+best_predictors.bwd <- names(which(regfit.bwd.summary$which[19, ] == TRUE))
+
+# ploting the best models
+#par(mfrow = c(2, 2))
+#plot(regfit.fwd.summary$rss, xlab = "Number of Variables",
+#ylab = "RSS", type = "l")
+#plot(regfit.fwd.summary$adjr2, xlab = "Number of Variables",
+#ylab = "Adjusted RSq", type = "l")
+
+# Cp
+#plot(regfit.fwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+#which.min(regfit.fwd.summary$cp)
+#points(35, regfit.fwd.summary$cp[35], col = "red", cex = 2, pch = 20) 
+```
+
+Fit a non-linear regression (e.g. spline model like GAM) and then compare it to the linear model using AIC or likelihood ratio test. This is a simple and intuitive method of testing non-linearity. If the test rejects, or if AIC prefers the GAM, then conclude there are non-linearities.
+
+```{r non_linear, echo=FALSE}
+library(car)
+# idea here is to find non-linear effects
+# we can use the best predictors from the forward selection
+# and then use the best predictors to fit a linear model
+# and then use the residuals to fit a non-linear model
+# and then compare the performance of the two models
+best_predictors <- as.vector(intersect(best_predictors.fwd, best_predictors.bwd))
+best_predictors <- best_predictors[-1]
+
+
+
+```
+
+
+```{r gam, echo=FALSE}
+# GAM model 
+library(gam)
+gam_model <- gam(LET_IS ~ s(AGE) + s(STENOK_AN) + s(GB) + ZSN_A + s(S_AD_ORIT) + K_SH_POST + s(ant_im) + s(inf_im) + IM_PG_P + s(n_p_ecg_p_12) + s(L_BLOOD) + s(TIME_B_S) + s(NA_KB) + NITR_S + ASP_S_n, data = MI_train, family = binomial)
+
+summary(gam_model)
+plot(gam_model, se = TRUE, col = "purple")
+
+# Predictions
+gam_pred <- predict(gam_model, MI_test, type = "response")
+gam_pred <- ifelse(gam_pred > 0.5, TRUE, FALSE)
+
+# Confusion matrix
+gam_model.table <- table(MI_test$LET_IS, gam_pred)
+confusionMatrix(gam_model.table)
+
+```
+
+```{r performance, echo=FALSE}
+# GAM (general additive models)? 
+#gam()
+# predict(gam1, se=TRUE, col= "purple")
 
 
 ```
@@ -119,21 +252,33 @@ library(randomForest)
 set.seed(33)
 
 # Random Forest model
-forest_model <- randomForest(LET_IS ~ ., mtry= 12, data = MI_train, ntree = 500)
+forest_model <- randomForest(LET_IS ~ ., mtry= 18, data = MI_train, ntree = 500)
 
 forest_pred <- predict(forest_model, MI_test, type = "class")
-table(MI_test$LET_IS, forest_pred)
+forest_model.table <- table(MI_test$LET_IS, forest_pred)
 
+confusionMatrix(forest_model.table)
 ```
 
-```{r performance, echo=FALSE}
+```{r ROC_Curve, echo=FALSE}
 # ROC curve
 library(pROC)
 
-roc_obj <- roc(MI_test$LET_IS, as.numeric(forest_pred))
-plot(roc_obj, col = "blue")
+# Compute ROC curve
+roc.forest_pred <- roc(MI_test$LET_IS, as.numeric(forest_pred))
+roc.lasso_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(lasso_pred.min)))
+roc.ridge_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(ridge_pred.min)))
+roc.gam_pred <- roc(MI_test$LET_IS, as.numeric(gam_pred))
+roc.unconstrained_pred_class <- roc(MI_test$LET_IS, as.numeric(unconstrained_pred_class))
 
-# TODO: plot ROC curve for linear models
+
+plot(roc.unconstrained_pred_class, col = "blue", main = "Comparison of ROC Curves", print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .5)
+plot(roc.forest_pred, col = "red", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .45)
+plot(roc.gam_pred, col = "green", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .4)
+plot(roc.lasso_pred, col = "purple", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .35)
+plot(roc.ridge_pred, col = "orange", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .30)
+# Add a legend
+legend("bottomright", legend = c("Unconstrained", "Random Forest", "GAM", "Lasso", "Ridge"), col = c("blue", "red", "green", "purple", "orange"), lwd = 2)
 
 ```
 
