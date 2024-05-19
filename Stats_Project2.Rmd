@@ -97,12 +97,10 @@ MI_test  <- MI[-trainIndex,]
 __Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to compare your models to?__
 
 We fitted and compared three models: an unconstrained linear model, a Lasso regression model, and a Ridge regression model, with a focus on identifying a model with high sensitivity, which measures the proportion of actual positives correctly identified by the model and thus, allowing the identification of the true death cases in our data.
-The unconstrained linear model achieved an accuracy of 0.81, a specificity of 0.89, and a sensitivity of 0.43. While this model performed reasonably well in terms of overall accuracy and specificity, its low sensitivity indicates a significant shortcoming in correctly identifying true positives. This makes the model less suitable for scenarios where correctly identifying true deaths (positives) is crucial.
-The Lasso regression model, which applies L1 regularization, showed an improved overall accuracy of 0.885 and a slightly higher specificity of 0.90. More importantly, it achieved a significantly higher sensitivity of 0.7273 compared to the unconstrained linear model. This indicates that Lasso regression was more effective in correctly identifying true positives cases, which is aligned with our objective of fiding a high sensitivity model.
-The Ridge regression model, using L2 regularization, achieved an accuracy of 0.8791, maintaining a specificity of 0.89, and a sensitivity of 0.7241. While the Ridge model also improved sensitivity compared to the unconstrained linear model, it performed slightly worse than the Lasso model in terms of sensitivity.
-Given our goal of achieving high sensitivity, the Lasso regression model stands out as the most suitable choice. It provides a good balance between high accuracy and specificity while significantly improving sensitivity. Thus, while both Lasso and Ridge regression techniques enhanced sensitivity compared to the unconstrained linear model, Lasso regression was particularly effective, making it the best model for our needs. The appropriate base-level of performance to compare our models to would be the unconstrained linear model, which serves as a benchmark for evaluating improvements in sensitivity and overall performance.
 
-```{r unconstrained_linear_model, message=FALSE, warning=FALSE, include=FALSE}
+The unconstrained linear model achieved an accuracy of 0.81, a specificity of 0.89, and a sensitivity of 0.43. While this model performed reasonably well in terms of overall accuracy and specificity, its low sensitivity indicates a significant shortcoming in correctly identifying true positives. This makes the model less suitable for scenarios where correctly identifying true deaths (positives) is crucial.
+
+```{r unconstrained_linear_model, echo=TRUE, message=FALSE, warning=FALSE}
 
 unconstrained_model <- glm(LET_IS ~ ., data = MI_train, family = binomial)
 #summary(unconstrained_model)
@@ -113,15 +111,18 @@ unconstrained_pred_class <- ifelse(unconstrained_pred > 0.5, TRUE, FALSE)
 
 # Confusion matrix
 unconstrained_model.table <- table(MI_test$LET_IS, unconstrained_pred_class)
+confusionMatrix(rotate_table_180(unconstrained_model.table))
 ```
 
-```{r lasso_model, message=FALSE, warning=FALSE, include=FALSE}
+The Lasso regression model, which applies L1 regularization, showed an improved overall accuracy of 0.885 and a slightly higher specificity of 0.90. More importantly, it achieved a significantly higher sensitivity of 0.7273 compared to the unconstrained linear model. This indicates that Lasso regression was more effective in correctly identifying true positives cases, which is aligned with our objective of fiding a high sensitivity model.
+
+```{r lasso_model, echo=TRUE, message=FALSE, warning=FALSE}
 
 # Lasso Model with Cross-Validation of 5 folds on the Training data
 lasso_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 1, family = "binomial", nfolds = 5)
 
 # Best lambda
-plot(lasso_model)
+#plot(lasso_model)
 
 # Best lambda values
 lasso_model$lambda.min
@@ -138,15 +139,18 @@ lasso_pred.1se <- predict(lasso_model, s= lasso_model$lambda.1se, newx = as.matr
 # Confusion matrix
 lasso_model.table <- table(MI_test$LET_IS, lasso_pred.min)
 #table(MI_test$LET_IS, lasso_pred.min)
+confusionMatrix(rotate_table_180(lasso_model.table))
 ```
 
-```{r ridge_model, message=FALSE, warning=FALSE, include=FALSE}
+The Ridge regression model, using L2 regularization, achieved an accuracy of 0.8791, maintaining a specificity of 0.89, and a sensitivity of 0.7241. While the Ridge model also improved sensitivity compared to the unconstrained linear model, it performed slightly worse than the Lasso model in terms of sensitivity.
+
+```{r ridge_model, echo=TRUE, message=FALSE, warning=FALSE}
 
 # Ridge Model with Cross-Validation of 5 folds on the Training data
 ridge_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 0, family = "binomial", nfolds = 5)
 
 # Best lambda
-plot(ridge_model)
+#plot(ridge_model)
 
 # Best lambda values
 ridge_model$lambda.min
@@ -163,15 +167,10 @@ ridge_pred.1se <- predict(ridge_model, s= ridge_model$lambda.1se, newx = as.matr
 # Confusion matrix
 ridge_model.table <- table(MI_test$LET_IS, ridge_pred.min)
 #table(MI_test$LET_IS, ridge_pred.1se)
-```
-
-```{r base_level_performance, echo=FALSE}
-
-confusionMatrix(rotate_table_180(unconstrained_model.table))
-confusionMatrix(rotate_table_180(lasso_model.table))
 confusionMatrix(rotate_table_180(ridge_model.table))
-
 ```
+
+Given our goal of achieving high sensitivity, the Lasso regression model stands out as the most suitable choice. It provides a good balance between high accuracy and specificity while significantly improving sensitivity. Thus, while both Lasso and Ridge regression techniques enhanced sensitivity compared to the unconstrained linear model, Lasso regression was particularly effective, making it the best model for our needs. The appropriate base-level of performance to compare our models to would be the unconstrained linear model, which serves as a benchmark for evaluating improvements in sensitivity and overall performance.
 
 
 ## Question 3
