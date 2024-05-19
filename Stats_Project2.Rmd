@@ -1,57 +1,74 @@
 ---
 title: "Stats Project 2"
-author: "Theodoro Gasperin Terra Camargo"
-class: "Statistical Methods for Bioinformatics"
+author: "Theodoro Gasperin Terra Camargo & Tarek Chammaa El Rifai Mashmoushi"
 date: "2024-05-13"
-output: html_document
+output:
+  pdf_document: default
+class: Statistical Methods for Bioinformatics
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 # Load packages
-library(rpart)
-library(RCurl)
-library(ggplot2)
-library(skimr)
+library(mice)
+library(caret)
+library(glmnet)
+library(dplyr)
+library(gam)
+library(randomForest)
+library(pROC)
 
 # importing data set
 load("./MI.RData")
+
+# Function to rotate a Confusion Matrix by 180 degrees.
+rotate_table_180 <- function(tbl) {
+  if (!is.matrix(tbl)) {
+    stop("Input must be a matrix")
+  }
+  # Rotate by 180 degrees: flip vertically and horizontally
+  rotated_tbl <- tbl[nrow(tbl):1, ncol(tbl):1]
+  return(rotated_tbl)
+}
 ```
 
-### Question 1
+## Question 1
 
-Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.
+__Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.__
 
-n > p
-5 misssing data 
-dimensionality of the data
-corinality <- variables that are correlated need to be removed
+The dataset has 102 columns, which include 101 predictor variables and 1 response variable (LET_IS). This high dimensionality presents several challenges, including increased computational cost and a high risk of overfitting. Consequently, it is crucial to select a model capable of handling many predictors, such as Lasso or Ridge regression.
+The predictor variables exhibit considerable variability in their data types, with some being continuous (e.g., Age) and others discrete (e.g., Sex). The response variable, LET_IS, is binary, indicating whether a patient survived (False) or died (True). Another issue to consider is multi-collinearity. Given the large number of predictors, it is likely that some variables are highly correlated, which can complicate model interpretation and degrade performance. 
+The dataset also contains several instances of missing data, each affecting the same five individuals across different variables. The affected variables and their missing values are: nr03 (5 missing values), zab_leg_02 (5 missing values), FIB_G_POST (5 missing values), post_im (5 missing values), and fibr_ter_02 (5 missing values). To handle these missing values, we used predictive imputation method approach with the mice() function from the mice library. This function fills in the missing values by using the information from the other variables to make the best guess, creating a complete dataset for analysis.
 
 
-```{r data_exploration, include=FALSE}
-head(MI)
-summary(MI)
+```{r data_exploration, echo=TRUE}
+#head(MI)
+#summary(MI)
 dim(MI)
 
 # checking for missing values
 sum(is.na(MI))
 
-na_counts <- sapply(MI, function(x) sum(is.na(x)))
-print(na_counts)
+# Identify columns with missing data
+missing_columns <- names(MI)[apply(MI, 2, function(x) any(is.na(x)))]
+print(missing_columns)
 
-sum(is.na(MI$nr03))
-sum(is.na(MI$zab_leg_02))
-sum(is.na(MI$FIB_G_POST))
-sum(is.na(MI$post_im))
-sum(is.na(MI$fibr_ter_02))
+# Identify rows with missing data
+rows_with_na <- apply(MI, 1, function(x) any(is.na(x)))
 
+# Get the indices of rows with missing data
+rows_with_missing_data <- which(rows_with_na)
+
+# Print the indices of rows with missing data
+print(rows_with_missing_data)
+
+# Print the rows with missing data
+#print(MI[rows_with_missing_data, ])
 ```
 
-```{r missing_data, include=FALSE}
+```{r data_imputation, include=FALSE}
 # *** Predictive Imputation ***
-library(mice)
-
 # Subset the data to only include rows with NA
 rows_with_na <- apply(MI, 1, function(x) any(is.na(x)))
 MI_missing <- MI[rows_with_na, ]
@@ -64,13 +81,9 @@ MI <- complete(MI_imputed)
 #sum(is.na(MI))
 ```
 
-```{r correlation, include=FALSE}
-```
-
-```{r split_data, echo=FALSE}
-library(caret)
-
+```{r split_data, warning=FALSE, include=FALSE}
 set.seed(33)
+
 # Splitting data into training and testing sets
 trainIndex <- createDataPartition(MI$LET_IS, p = .8, 
                                   list = FALSE, 
@@ -79,14 +92,17 @@ MI_train <- MI[ trainIndex,]
 MI_test  <- MI[-trainIndex,]
 ```
 
-### Question 2  
+## Question 2  
 
-Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to compare your models to?
+__Fit and compare an appropriate unconstrained linear model, as well as lasso and ridge regression models. Discuss what you find. What is an appropriate base-level of performance to compare your models to?__
 
-```{r unconstrained_linear_model, echo=FALSE}
-library(glmnet)
-library(dplyr)
-library(leaps)
+We fitted and compared three models: an unconstrained linear model, a Lasso regression model, and a Ridge regression model, with a focus on identifying a model with high sensitivity, which measures the proportion of actual positives correctly identified by the model and thus, allowing the identification of the true death cases in our data.
+The unconstrained linear model achieved an accuracy of 0.81, a specificity of 0.89, and a sensitivity of 0.43. While this model performed reasonably well in terms of overall accuracy and specificity, its low sensitivity indicates a significant shortcoming in correctly identifying true positives. This makes the model less suitable for scenarios where correctly identifying true deaths (positives) is crucial.
+The Lasso regression model, which applies L1 regularization, showed an improved overall accuracy of 0.885 and a slightly higher specificity of 0.90. More importantly, it achieved a significantly higher sensitivity of 0.7273 compared to the unconstrained linear model. This indicates that Lasso regression was more effective in correctly identifying true positives cases, which is aligned with our objective of fiding a high sensitivity model.
+The Ridge regression model, using L2 regularization, achieved an accuracy of 0.8791, maintaining a specificity of 0.89, and a sensitivity of 0.7241. While the Ridge model also improved sensitivity compared to the unconstrained linear model, it performed slightly worse than the Lasso model in terms of sensitivity.
+Given our goal of achieving high sensitivity, the Lasso regression model stands out as the most suitable choice. It provides a good balance between high accuracy and specificity while significantly improving sensitivity. Thus, while both Lasso and Ridge regression techniques enhanced sensitivity compared to the unconstrained linear model, Lasso regression was particularly effective, making it the best model for our needs. The appropriate base-level of performance to compare our models to would be the unconstrained linear model, which serves as a benchmark for evaluating improvements in sensitivity and overall performance.
+
+```{r unconstrained_linear_model, message=FALSE, warning=FALSE, include=FALSE}
 
 unconstrained_model <- glm(LET_IS ~ ., data = MI_train, family = binomial)
 #summary(unconstrained_model)
@@ -97,10 +113,10 @@ unconstrained_pred_class <- ifelse(unconstrained_pred > 0.5, TRUE, FALSE)
 
 # Confusion matrix
 unconstrained_model.table <- table(MI_test$LET_IS, unconstrained_pred_class)
-unconstrained_model.table
 ```
 
-```{r lasso_model, echo=FALSE}
+```{r lasso_model, message=FALSE, warning=FALSE, include=FALSE}
+
 # Lasso Model with Cross-Validation of 5 folds on the Training data
 lasso_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 1, family = "binomial", nfolds = 5)
 
@@ -112,8 +128,8 @@ lasso_model$lambda.min
 lasso_model$lambda.1se
 
 # Coefficients of variables at lambda min and lambda 1se
-coef(lasso_model, s = "lambda.min")
-coef(lasso_model, s = "lambda.1se")
+#coef(lasso_model, s = "lambda.min")
+#coef(lasso_model, s = "lambda.1se")
 
 # Predictions
 lasso_pred.min <- predict(lasso_model, s= lasso_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
@@ -122,10 +138,10 @@ lasso_pred.1se <- predict(lasso_model, s= lasso_model$lambda.1se, newx = as.matr
 # Confusion matrix
 lasso_model.table <- table(MI_test$LET_IS, lasso_pred.min)
 #table(MI_test$LET_IS, lasso_pred.min)
-
 ```
 
-```{r ridge_model, echo=FALSE}
+```{r ridge_model, message=FALSE, warning=FALSE, include=FALSE}
+
 # Ridge Model with Cross-Validation of 5 folds on the Training data
 ridge_model <- cv.glmnet(as.matrix(select(MI_train, -LET_IS)), MI_train$LET_IS, type.measure = "class", alpha = 0, family = "binomial", nfolds = 5)
 
@@ -137,8 +153,8 @@ ridge_model$lambda.min
 ridge_model$lambda.1se
 
 # Coefficients of variables at lambda min and lambda 1se
-coef(lasso_model, s = "lambda.min")
-coef(lasso_model, s = "lambda.1se")
+lasso_coef.min <- coef(lasso_model, s = "lambda.min")
+lasso_coef.1se <- coef(lasso_model, s = "lambda.1se")
 
 # Predictions
 ridge_pred.min <- predict(ridge_model, s= ridge_model$lambda.min, newx = as.matrix(select(MI_test, -LET_IS)), type = "class")
@@ -147,24 +163,130 @@ ridge_pred.1se <- predict(ridge_model, s= ridge_model$lambda.1se, newx = as.matr
 # Confusion matrix
 ridge_model.table <- table(MI_test$LET_IS, ridge_pred.min)
 #table(MI_test$LET_IS, ridge_pred.1se)
-
 ```
 
 ```{r base_level_performance, echo=FALSE}
-library(caret)
-library(e1071)
-confusionMatrix(unconstrained_model.table)
-confusionMatrix(lasso_model.table)
-confusionMatrix(ridge_model.table)
+
+confusionMatrix(rotate_table_180(unconstrained_model.table))
+confusionMatrix(rotate_table_180(lasso_model.table))
+confusionMatrix(rotate_table_180(ridge_model.table))
 
 ```
 
 
-### Question 3
+## Question 3
 
-Among your top predictors, do you see evidence of non-linear effects? How could you accommodate non-linear effects and still use a regularized regression approach? Does adding non-linear effects improve your model?
+__Among your top predictors, do you see evidence of non-linear effects? How could you accommodate non-linear effects and still use a regularized regression approach? Does adding non-linear effects improve your model?__
 
-```{r shrinkage, echo=FALSE}
+We identified the top predictors using Lasso regression and observed evidence of non-linear effects in some of these predictors. To assess the relevance of these non-linear effects, we fitted a Generalized Additive Model (GAM) which allows for non-linear relationships by incorporating smooth terms for continuous predictors. However, when comparing the performance of the GAM model to the standard Lasso regression model, which does not account for non-linear effects, we found that the inclusion of non-linear terms did not improve the model's performance at the threshold of 0.5. In fact, it decreased the sensitivity from 72% (lasso) to 64% (GAM). 
+
+```{r best_predictors, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Get the coefficients at the best lambda
+lasso_coef.min <- coef(lasso_model, s = "lambda.min")
+lasso_coef_df <- as.data.frame(as.matrix(lasso_coef.min))
+lasso_coef_df$variable <- rownames(lasso_coef_df)
+colnames(lasso_coef_df)[1] <- "coefficient"
+
+# Filter out variables with non-zero coefficients
+best_lasso_predictors <- lasso_coef_df[lasso_coef_df$coefficient != 0, ]
+selected_predictors <- best_lasso_predictors$variable[-1]
+
+# Identify binary/categorical and continuous predictors
+binary_predictors <- selected_predictors[sapply(MI_train[, selected_predictors], function(x) length(unique(x)) <= 3)]
+continuous_predictors <- setdiff(selected_predictors, binary_predictors)
+
+formula.adjusted = as.formula("LET_IS ~ s(AGE) + SEX + s(STENOK_AN) + s(IBS_POST) + s(IBS_NASL) + GB + SIM_GIPERT + s(DLIT_AG) + s(ZSN_A) + nr11 + nr01 + nr03 + nr04 + nr08 + np01 + np05 + np08 + np10 + endocr_01 + endocr_02 + endocr_03 + zab_leg_01 + zab_leg_02 + zab_leg_03 + s(S_AD_ORIT) + s(D_AD_ORIT) + O_L_POST + K_SH_POST + SVT_POST + GT_POST + s(ant_im) + s(lat_im) + s(inf_im) + s(post_im) + IM_PG_P + ritm_ecg_p_01 + ritm_ecg_p_04 + ritm_ecg_p_06 + ritm_ecg_p_07 + ritm_ecg_p_08 + n_r_ecg_p_01 + n_r_ecg_p_04 + n_r_ecg_p_10 + n_p_ecg_p_01 + n_p_ecg_p_03 + n_p_ecg_p_04 + n_p_ecg_p_08 + n_p_ecg_p_10 + n_p_ecg_p_12 + fibr_ter_01 + fibr_ter_03 + fibr_ter_08 + s(KFK_BLOOD) + s(L_BLOOD) + ROE + s(TIME_B_S) + s(NA_KB) + s(NOT_NA_KB) + s(LID_KB) + NITR_S + B_BLOK_S_n + ANT_CA_S_n + ASP_S_n")
+```
+
+```{r gam_model_0.5, echo=TRUE, message=FALSE, warning=FALSE}
+
+# GAM model at threshold 0.5
+gam_model <- gam(formula.adjusted, data = MI_train, family = "binomial")
+
+#summary(gam_model)
+#plot(gam_model, se = TRUE, col = "purple")
+
+# Predictions
+gam_pred <- predict(gam_model, MI_test, type = "response")
+
+threshold <- 0.5
+gam_pred_binary <- ifelse(gam_pred > threshold, TRUE, FALSE)
+
+# Confusion matrix
+gam_model.table <- table(MI_test$LET_IS, gam_pred_binary)
+confusionMatrix(rotate_table_180(gam_model.table))
+```
+
+At the same time, with the threshold of 0.8, the GAM model performed better overall. It achieved an accuracy of 89%, a sensitivity of 85%, and a specificity of 90%. This suggests that the GAM model correctly captured the non linear effects in the data and performed overall better than the lasso and ridge models.
+
+```{r gam_model_08, echo=TRUE, message=FALSE, warning=FALSE}
+
+# GAM model at threshold 0.8
+threshold <- 0.8
+gam_pred_binary <- ifelse(gam_pred > threshold, TRUE, FALSE)
+
+# Confusion matrix
+gam_model.table <- table(MI_test$LET_IS, gam_pred_binary)
+confusionMatrix(rotate_table_180(gam_model.table))
+
+# Re-seting the threshold back to 0.5
+threshold <- 0.5
+gam_pred_binary <- ifelse(gam_pred > threshold, TRUE, FALSE)
+```
+
+## Question 4
+
+__Fit an appropriate Random Forest model. Report a comparison of performance to your linear model and explain any differences in performance. Do you see an important difference in how variables are used for predictions?__
+
+When comparing Random Forests and Linear Models, there are significant differences in how variables are used for predictions. Linear models assume a linear relationship between the predictors and the response. This means they only capture linear interactions.
+In contrast, Random Forests allow us to build multiple decision trees to capture complex, non-linear relationships and interactions between variables. Variable importance in Random Forests is determined by the contribution of each variable to the reduction in impurity (Gini impurity) across all trees. Variables frequently used to split nodes and providing better splits are considered more important.
+Random Forests are more flexible than Lasso, Ridge, and GLMs, particularly when it comes to capturing non-linear relationships and interactions between predictors, whereas linear models offer more straightforward interpretations and are easier to understand.
+
+```{r random_forest, echo=TRUE, message=FALSE, warning=FALSE}
+set.seed(33)
+
+# Random Forest model
+forest_model <- randomForest(LET_IS ~ ., mtry= 18, data = MI_train, ntree = 500)
+
+# Predictions
+forest_pred <- predict(forest_model, MI_test, type = "class")
+forest_model.table <- table(MI_test$LET_IS, forest_pred)
+
+# Confusion matrix
+confusionMatrix(rotate_table_180(forest_model.table))
+```
+
+The ROC curve comparison reveals significant differences in the performance of the models based on the Area Under the Curve (AUC) metric. The Generalized Additive Model (GAM) demonstrates the highest AUC of 0.765, indicating superior discriminative ability across various thresholds when compared to the other models. The Lasso regression follows closely with an AUC of 0.706, suggesting that it also performs well in differentiating between classes. The Ridge regression, with an AUC of 0.680, performs moderately, surpassing the Unconstrained linear model and the Random Forest, both of which have an AUC of 0.674. This indicates that while regularization techniques like Lasso and Ridge improve model performance over the basic linear model, the GAM's incorporation of non-linear effects provides the most substantial enhancement in predictive capability. The Random Forest model's AUC performance being on par with the Unconstrained model suggests that it may not be capturing complex relationships in the data as effectively as expected. However, the Random forest model showed the highest sensitivity among all predictors (95%), correctly identified 19 out of 20 cases which it predicted to be positive, and 89% accuracy in par with the GAM model at threshold 0.8. Overall, these findings highlight the importance of considering non-linear effects and regularization techniques to enhance model accuracy and reliability in predictive tasks. 
+
+```{r ROC_Curve, echo=FALSE, message=FALSE, warning=FALSE}
+
+# Compute ROC curve
+roc.forest_pred <- roc(MI_test$LET_IS, as.numeric(forest_pred))
+roc.lasso_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(lasso_pred.min)))
+roc.ridge_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(ridge_pred.min)))
+roc.gam_pred <- roc(MI_test$LET_IS, as.numeric(gam_pred_binary))
+roc.unconstrained_pred_class <- roc(MI_test$LET_IS, as.numeric(unconstrained_pred_class))
+
+
+plot(roc.unconstrained_pred_class, col = "blue", main = "Comparison of ROC Curves", print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .5)
+plot(roc.forest_pred, col = "red", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .45)
+plot(roc.gam_pred, col = "green", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .4)
+plot(roc.lasso_pred, col = "purple", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .35)
+plot(roc.ridge_pred, col = "orange", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .30)
+# Add a legend
+legend("bottomright", legend = c("Unconstrained", "Random Forest", "GAM", "Lasso", "Ridge"), col = c("blue", "red", "green", "purple", "orange"), lwd = 2)
+```
+
+
+
+
+
+
+
+
+```{r step_wise_predictors_selection, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+library(leaps)
 
 # *** Shrinkage Linear model ***
 regfit.fwd <- regsubsets(LET_IS ~ ., data = MI, nvmax = 35, method = "forward")
@@ -200,88 +322,39 @@ best_predictors.bwd <- names(which(regfit.bwd.summary$which[19, ] == TRUE))
 #points(35, regfit.fwd.summary$cp[35], col = "red", cex = 2, pch = 20) 
 ```
 
-Fit a non-linear regression (e.g. spline model like GAM) and then compare it to the linear model using AIC or likelihood ratio test. This is a simple and intuitive method of testing non-linearity. If the test rejects, or if AIC prefers the GAM, then conclude there are non-linearities.
 
-```{r non_linear, echo=FALSE}
+```{r step_wise_best_predictors, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 library(car)
-# idea here is to find non-linear effects
-# we can use the best predictors from the forward selection
-# and then use the best predictors to fit a linear model
-# and then use the residuals to fit a non-linear model
-# and then compare the performance of the two models
+
 best_predictors <- as.vector(intersect(best_predictors.fwd, best_predictors.bwd))
 best_predictors <- best_predictors[-1]
-
-
-
 ```
 
 
-```{r gam, echo=FALSE}
+```{r gam_step_wise, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 # GAM model 
 library(gam)
-gam_model <- gam(LET_IS ~ s(AGE) + s(STENOK_AN) + s(GB) + ZSN_A + s(S_AD_ORIT) + K_SH_POST + s(ant_im) + s(inf_im) + IM_PG_P + s(n_p_ecg_p_12) + s(L_BLOOD) + s(TIME_B_S) + s(NA_KB) + NITR_S + ASP_S_n, data = MI_train, family = binomial)
+gam_model.stepwise <- gam(LET_IS ~ s(AGE) + s(STENOK_AN) + s(GB) + ZSN_A + s(S_AD_ORIT) + K_SH_POST + s(ant_im) + s(inf_im) + IM_PG_P + s(n_p_ecg_p_12) + s(L_BLOOD) + s(TIME_B_S) + s(NA_KB) + NITR_S + ASP_S_n, data = MI_train, family = binomial)
 
-summary(gam_model)
+summary(gam_model.stepwise)
 plot(gam_model, se = TRUE, col = "purple")
 
 # Predictions
-gam_pred <- predict(gam_model, MI_test, type = "response")
-gam_pred <- ifelse(gam_pred > 0.5, TRUE, FALSE)
+gam_pred.stepwise <- predict(gam_model, MI_test, type = "response")
+
+gam_pred.stepwise <- ifelse(gam_pred > 0.5, TRUE, FALSE)
 
 # Confusion matrix
-gam_model.table <- table(MI_test$LET_IS, gam_pred)
-confusionMatrix(gam_model.table)
-
+gam_model.table <- table(MI_test$LET_IS, gam_pred.stepwise)
+confusionMatrix(rotate_table_180(gam_model.table))
 ```
 
-```{r performance, echo=FALSE}
-# GAM (general additive models)? 
-#gam()
-# predict(gam1, se=TRUE, col= "purple")
+```{r neural_network, eval=FALSE, include=FALSE}
+# Neural Network
+library(neuralnet)
 
-
-```
-
-### Question 4
-
-Fit an appropriate Random Forest model. Report a comparison of performance to your linear model and explain any differences in performance. Do you see an important difference in how variables are used for predictions?
-
-```{r random_forest, echo=FALSE}
-library(randomForest)
-set.seed(33)
-
-# Random Forest model
-forest_model <- randomForest(LET_IS ~ ., mtry= 18, data = MI_train, ntree = 500)
-
-forest_pred <- predict(forest_model, MI_test, type = "class")
-forest_model.table <- table(MI_test$LET_IS, forest_pred)
-
-confusionMatrix(forest_model.table)
-```
-
-```{r ROC_Curve, echo=FALSE}
-# ROC curve
-library(pROC)
-
-# Compute ROC curve
-roc.forest_pred <- roc(MI_test$LET_IS, as.numeric(forest_pred))
-roc.lasso_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(lasso_pred.min)))
-roc.ridge_pred <- roc(MI_test$LET_IS, as.numeric(as.factor(ridge_pred.min)))
-roc.gam_pred <- roc(MI_test$LET_IS, as.numeric(gam_pred))
-roc.unconstrained_pred_class <- roc(MI_test$LET_IS, as.numeric(unconstrained_pred_class))
-
-
-plot(roc.unconstrained_pred_class, col = "blue", main = "Comparison of ROC Curves", print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .5)
-plot(roc.forest_pred, col = "red", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .45)
-plot(roc.gam_pred, col = "green", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .4)
-plot(roc.lasso_pred, col = "purple", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .35)
-plot(roc.ridge_pred, col = "orange", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .30)
-# Add a legend
-legend("bottomright", legend = c("Unconstrained", "Random Forest", "GAM", "Lasso", "Ridge"), col = c("blue", "red", "green", "purple", "orange"), lwd = 2)
-
-```
-
-```{r}
+# Neural Network model
+#nn_model <- neuralnet(LET_IS ~ ., data = MI_train, hidden = c(5, 3), act.fct = "logistic", linear.output = FALSE)
+#plot(nn_model)
 
 ```
