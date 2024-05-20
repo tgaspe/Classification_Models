@@ -38,8 +38,8 @@ rotate_table_180 <- function(tbl) {
 __Study and describe the predictor variables. Do you see any issues that are relevant for making predictions? Make sure to discuss the dimensionality of the data and the implication on fitting models.__
 
 The dataset has 102 columns, which include 101 predictor variables and 1 response variable (LET_IS). This high dimensionality presents several challenges, including increased computational cost and a high risk of overfitting. Consequently, it is crucial to select a model capable of handling many predictors, such as Lasso or Ridge regression.
-The predictor variables exhibit considerable variability in their data types, with some being continuous (e.g., Age) and others discrete (e.g., Sex). The response variable, LET_IS, is binary, indicating whether a patient survived (False) or died (True). Another issue to consider is multi-collinearity. Given the large number of predictors, it is likely that some variables are highly correlated, which can complicate model interpretation and degrade performance. 
-The dataset also contains several instances of missing data, each affecting the same five individuals across different variables. The affected variables and their missing values are: nr03 (5 missing values), zab_leg_02 (5 missing values), FIB_G_POST (5 missing values), post_im (5 missing values), and fibr_ter_02 (5 missing values). To handle these missing values, we used predictive imputation method approach with the mice() function from the mice library. This function fills in the missing values by using the information from the other variables to make the best guess, creating a complete dataset for analysis.
+The predictor variables exhibit considerable variability in their data types, with some being continuous (e.g., IBS_NASL) and others discrete (e.g., Sex). The response variable, LET_IS, is binary, indicating whether a patient survived (False) or died (True). Another issue to consider is multi-collinearity. Given the large number of predictors, it is likely that some variables are highly correlated, which can complicate model interpretation and degrade performance. 
+The dataset also contains several instances of missing data, each affecting the same five individuals across different variables. The affected variables and their missing values are: nr03 (5 missing values), zab_leg_02 (5 missing values), FIB_G_POST (5 missing values), post_im (5 missing values), and fibr_ter_02 (5 missing values). To handle these missing values, we used predictive imputation approach that used the mice() function from the mice library. This function fills in the missing values by using the information from the other variables to make the best guess, creating a complete dataset for analysis.
 
 
 ```{r data_exploration, echo=TRUE}
@@ -217,7 +217,7 @@ gam_model.table <- table(MI_test$LET_IS, gam_pred_binary)
 confusionMatrix(rotate_table_180(gam_model.table))
 ```
 
-At the same time, with the threshold of 0.8, the GAM model performed better overall. It achieved an accuracy of 89%, a sensitivity of 85%, and a specificity of 90%. This suggests that the GAM model correctly captured the non linear effects in the data and performed overall better than the lasso and ridge models.
+However, with the threshold of 0.8, the GAM model performed better overall. It achieved an accuracy of 89%, a sensitivity of 85%, and a specificity of 90%. This suggests that the GAM model correctly captured the non linear effects in the data and performed overall better than the lasso and ridge models.
 
 ```{r gam_model_08, echo=TRUE, message=FALSE, warning=FALSE}
 
@@ -268,92 +268,12 @@ roc.gam_pred <- roc(MI_test$LET_IS, as.numeric(gam_pred_binary))
 roc.unconstrained_pred_class <- roc(MI_test$LET_IS, as.numeric(unconstrained_pred_class))
 
 
-plot(roc.unconstrained_pred_class, col = "blue", main = "Comparison of ROC Curves", print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .5)
-plot(roc.forest_pred, col = "red", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .45)
-plot(roc.gam_pred, col = "green", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .4)
-plot(roc.lasso_pred, col = "purple", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .35)
-plot(roc.ridge_pred, col = "orange", add = TRUE, print.auc = TRUE, print.auc.x = 0.5, print.auc.y = .30)
+plot(roc.unconstrained_pred_class, col = "blue", main = "Comparison of ROC Curves", print.auc = TRUE, print.auc.x = 0.1, print.auc.y = .8)
+plot(roc.forest_pred, col = "red", add = TRUE, print.auc = TRUE, print.auc.x = 0.1, print.auc.y = .75)
+plot(roc.gam_pred, col = "green", add = TRUE, print.auc = TRUE, print.auc.x = 0.1, print.auc.y = .7)
+plot(roc.lasso_pred, col = "purple", add = TRUE, print.auc = TRUE, print.auc.x = 0.1, print.auc.y = .65)
+plot(roc.ridge_pred, col = "orange", add = TRUE, print.auc = TRUE, print.auc.x = 0.1, print.auc.y = .6)
 # Add a legend
 legend("bottomright", legend = c("Unconstrained", "Random Forest", "GAM", "Lasso", "Ridge"), col = c("blue", "red", "green", "purple", "orange"), lwd = 2)
 ```
 
-
-
-
-
-
-
-
-```{r step_wise_predictors_selection, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
-library(leaps)
-
-# *** Shrinkage Linear model ***
-regfit.fwd <- regsubsets(LET_IS ~ ., data = MI, nvmax = 35, method = "forward")
-regfit.fwd.summary <- summary(regfit.fwd)
-
-regfit.bwd <- regsubsets(LET_IS ~ ., data = MI_train, nvmax = 35, method = "backward") 
-regfit.bwd.summary <-summary(regfit.bwd)
-
-# Bic (forward selection)
-which.min(regfit.fwd.summary$bic)
-plot(regfit.fwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
-points(20, regfit.fwd.summary$bic[20], col = "red", cex = 2, pch = 20)
-
-# Bic (backward selection)
-which.min(regfit.bwd.summary$bic)
-plot(regfit.bwd.summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
-points(19, regfit.bwd.summary$bic[19], col = "red", cex = 2, pch = 20)
-
-# Best predictors variables
-best_predictors.fwd <- names(which(regfit.fwd.summary$which[20, ] == TRUE))
-best_predictors.bwd <- names(which(regfit.bwd.summary$which[19, ] == TRUE))
-
-# ploting the best models
-#par(mfrow = c(2, 2))
-#plot(regfit.fwd.summary$rss, xlab = "Number of Variables",
-#ylab = "RSS", type = "l")
-#plot(regfit.fwd.summary$adjr2, xlab = "Number of Variables",
-#ylab = "Adjusted RSq", type = "l")
-
-# Cp
-#plot(regfit.fwd.summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
-#which.min(regfit.fwd.summary$cp)
-#points(35, regfit.fwd.summary$cp[35], col = "red", cex = 2, pch = 20) 
-```
-
-
-```{r step_wise_best_predictors, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
-library(car)
-
-best_predictors <- as.vector(intersect(best_predictors.fwd, best_predictors.bwd))
-best_predictors <- best_predictors[-1]
-```
-
-
-```{r gam_step_wise, eval=FALSE, message=FALSE, warning=FALSE, include=FALSE}
-# GAM model 
-library(gam)
-gam_model.stepwise <- gam(LET_IS ~ s(AGE) + s(STENOK_AN) + s(GB) + ZSN_A + s(S_AD_ORIT) + K_SH_POST + s(ant_im) + s(inf_im) + IM_PG_P + s(n_p_ecg_p_12) + s(L_BLOOD) + s(TIME_B_S) + s(NA_KB) + NITR_S + ASP_S_n, data = MI_train, family = binomial)
-
-summary(gam_model.stepwise)
-plot(gam_model, se = TRUE, col = "purple")
-
-# Predictions
-gam_pred.stepwise <- predict(gam_model, MI_test, type = "response")
-
-gam_pred.stepwise <- ifelse(gam_pred > 0.5, TRUE, FALSE)
-
-# Confusion matrix
-gam_model.table <- table(MI_test$LET_IS, gam_pred.stepwise)
-confusionMatrix(rotate_table_180(gam_model.table))
-```
-
-```{r neural_network, eval=FALSE, include=FALSE}
-# Neural Network
-library(neuralnet)
-
-# Neural Network model
-#nn_model <- neuralnet(LET_IS ~ ., data = MI_train, hidden = c(5, 3), act.fct = "logistic", linear.output = FALSE)
-#plot(nn_model)
-
-```
